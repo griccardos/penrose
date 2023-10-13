@@ -253,6 +253,18 @@ pub trait XConnExt: XConn + Sized {
         self.modify_and_refresh(state, |_| ())
     }
 
+     /// Check whether or not the given client should be assigned bar status or not.
+     fn client_should_bar(&self, client: Xid, bar_classes: &[String]) -> Result<bool> {
+        trace!(%client, "fetching WmClass prop");
+        if let Some(Prop::UTF8String(strs)) = self.get_prop(client, Atom::WmClass.as_ref())? {
+            if strs.iter().any(|c| bar_classes.contains(c)) {
+                trace!(%client, ?bar_classes, "window has a bar class: setting to floating state");
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Check whether or not the given client should be assigned floating status or not.
     fn client_should_float(&self, client: Xid, floating_classes: &[String]) -> Result<bool> {
         trace!(%client, "fetching WmClass prop");
@@ -473,6 +485,13 @@ pub(crate) fn manage_without_refresh<X: XConn>(
         None => state.client_set.insert(id),
     }
 
+    if x.client_should_bar(id, &state.config.bar_classes)? {
+        let r = x.client_geometry(id)?;
+        if state.client_set.make_bar(id, r).is_err() {
+            error!(%id, "attempted to bar client which was not in state");
+        }
+    }
+
     if should_float {
         let r = floating_client_position(id, transient_for, state, x)?;
         if state.client_set.float(id, r).is_err() {
@@ -502,7 +521,10 @@ fn floating_client_position<X: XConn>(
     x: &X,
 ) -> Result<Rect> {
     let r_initial = x.client_geometry(id)?;
-
+    //if bar we don't center
+    if state.client_set.bars.contains_key(&id) {
+        return Ok(r_initial);
+    }
     let r_screen = transient_for
         .and_then(|parent| state.client_set.screen_for_client(&parent))
         .unwrap_or(&state.client_set.screens.focus)
@@ -522,19 +544,27 @@ fn notify_killed<X: XConn>(x: &X, state: &mut State<X>) -> Result<()> {
 
     Ok(())
 }
-
+fn is_bar<X: XConn>(id: Xid, state: &State<X>) -> bool {
+    state.client_set.bars.contains_key(&id)
+}
 fn set_window_props<X: XConn>(x: &X, state: &mut State<X>) -> Result<()> {
     for &c in state.diff.new_clients() {
-        x.set_initial_properties(c, &state.config)?;
+        if !is_bar(c, state) {
+            x.set_initial_properties(c, &state.config)?;
+        }
     }
 
     if let Some(focused) = state.diff.before.focused_client {
-        x.set_client_border_color(focused, state.config.normal_border)?;
+        if !is_bar(focused, state) {
+            x.set_client_border_color(focused, state.config.normal_border)?;
+        }
     }
 
     if let Some(&focused) = state.client_set.current_client() {
-        trace!(?focused, "setting border for focused client");
-        x.set_client_border_color(focused, state.config.focused_border)?;
+        if !is_bar(focused, state) {
+            trace!(?focused, "setting border for focused client");
+            x.set_client_border_color(focused, state.config.focused_border)?;
+        }
     }
 
     Ok(())
@@ -605,7 +635,11 @@ fn set_window_visibility<X: XConn>(x: &X, state: &mut State<X>) -> Result<()> {
 
 fn set_focus<X: XConn>(x: &X, state: &mut State<X>) -> Result<()> {
     if let Some(&id) = state.client_set.current_client() {
-        x.focus(id)
+        if !is_bar(id, state) {
+            x.focus(id)
+        } else {
+            x.focus(state.root)
+        }
     } else {
         x.focus(state.root)
     }

@@ -261,6 +261,8 @@ where
     pub tags: Vec<String>,
     /// Window classes that should always be assigned floating positions rather than tiled
     pub floating_classes: Vec<String>,
+    /// Window classes that is not focusable e.g. because they are a dock/status bar
+    pub bar_classes: Vec<String>,
     /// A [StateHook] to run before entering the main event loop
     pub startup_hook: Option<Box<dyn StateHook<X>>>,
     /// A [StateHook] to run before processing each [XEvent]
@@ -305,6 +307,7 @@ where
             default_layouts: LayoutStack::default(),
             tags: strings(&["1", "2", "3", "4", "5", "6", "7", "8", "9"]),
             floating_classes: strings(&["dmenu", "dunst"]),
+            bar_classes: vec![],
             startup_hook: None,
             event_hook: None,
             manage_hook: None,

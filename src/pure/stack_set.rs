@@ -25,6 +25,7 @@ where
     pub(crate) screens: Stack<Screen<C>>, // Workspaces visible on screens
     pub(crate) hidden: VecDeque<Workspace<C>>, // Workspaces not currently on any screen
     pub(crate) floating: HashMap<C, RelativeRect>, // Floating windows
+    pub(crate) bars: HashMap<C, RelativeRect>, // Bars
     pub(crate) previous_tag: String,      // The last tag to be focused before the current one
     pub(crate) invisible_tags: Vec<String>, // Tags that should never be focused
     pub(crate) killed_clients: Vec<C>, // clients that have been removed and need processing on the X side
@@ -91,6 +92,7 @@ where
             screens,
             hidden,
             floating,
+            bars: HashMap::new(),
             previous_tag,
             invisible_tags: vec![],
             killed_clients: vec![],
@@ -142,6 +144,18 @@ where
             // If the tag is hidden then it gets moved to the current screen
             self.try_swap_on_screen_workspace_with_hidden(tag);
         }
+
+        //move bars to new tag
+        let to_move = self
+            .bars
+            .iter()
+            .map(|bc| bc.0.to_owned())
+            .collect::<Vec<_>>();
+
+        to_move.iter().for_each(|bc| {
+            self.move_client_to_tag(bc, tag);
+            self.focus_down();
+        });
 
         // If nothing matched by this point then the requested tag is unknown
         // so there is nothing for us to do
@@ -233,6 +247,18 @@ where
         while self.current_client() != Some(client) {
             self.focus_up()
         }
+        // go to first non bar
+        loop {
+            if let Some(cl) = self.current_client() {
+                if self.bars.contains_key(cl) {
+                    self.focus_up();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
     }
 
     /// Insert the given client to the current [Stack] in a default [Position].
@@ -263,6 +289,12 @@ where
         }
     }
 
+    pub(crate) fn make_bar_unchecked<R: RelativeTo>(&mut self, client: C, r: R) {
+        if let Some(screen) = self.screen_for_client(&client) {
+            let r = r.relative_to(&screen.r);
+            self.bars.insert(client, r);
+        }
+    }
     /// Clear the floating status of a client, returning its previous preferred
     /// screen position if the client was known, otherwise `None`.
     pub fn sink(&mut self, client: &C) -> Option<Rect> {
@@ -775,7 +807,15 @@ impl StackSet<Xid> {
 
         Ok(())
     }
+    /// Record a client as a bar
+    pub fn make_bar(&mut self, client: Xid, r: Rect) -> Result<()> {
+        if !self.contains(&client) {
+            return Err(Error::UnknownClient(client));
+        }
+        self.make_bar_unchecked(client, r);
 
+        Ok(())
+    }
     pub(crate) fn update_screens(&mut self, rects: Vec<Rect>) -> Result<()> {
         let n_old = self.screens.len();
         let n_new = rects.len();
@@ -887,6 +927,17 @@ where
     }
 }
 
+impl<C> StackSet<C>
+where
+    C: Clone + PartialEq + Eq + Hash,
+{
+    fn can_focus(&self) -> bool {
+        if let Some(cl) = self.current_client() {
+            return !self.bars.contains_key(cl);
+        }
+        true
+    }
+}
 macro_rules! defer_to_current_stack {
     ($(
         $(#[$doc_str:meta])*
@@ -901,6 +952,12 @@ macro_rules! defer_to_current_stack {
                 pub fn $method(&mut self) {
                     if let Some(ref mut stack) = self.screens.focus.workspace.stack {
                         stack.$method();
+                    }
+                    //if focus on something we cannot focus on, we call method again
+                    if !self.can_focus(){
+                        if let Some(ref mut stack) = self.screens.focus.workspace.stack {
+                            stack.$method();
+                        }
                     }
                 }
             )+
