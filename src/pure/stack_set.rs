@@ -257,9 +257,10 @@ where
     }
 
     pub(crate) fn float_unchecked<R: RelativeTo>(&mut self, client: C, r: R) {
-        let screen = self.screen_for_client(&client).expect("client to be known");
-        let r = r.relative_to(&screen.r);
-        self.floating.insert(client, r);
+        if let Some(screen) = self.screen_for_client(&client) {
+            let r = r.relative_to(&screen.r);
+            self.floating.insert(client, r);
+        }
     }
 
     /// Clear the floating status of a client, returning its previous preferred
