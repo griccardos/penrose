@@ -599,41 +599,33 @@ where
 
     ///Move focus to next tag
     pub fn next_tag(&mut self) {
-        if self.ordered_tags().len()<= 1 {
+        let tags = self.ordered_tags();
+        if tags.len() == 0 {
             return;
         }
-        self.update_previous_tag(self.screens.focus.workspace.tag.clone());
-       
-        let i = self
-            .ordered_tags()
+        let i = tags
             .iter()
             .position(|a| a == self.current_tag())
             .unwrap_or_default();
 
-        let i = (i + 1) % self.ordered_tags().len();
-        let new_tag = &self.ordered_tags()[i];
+        let new_i = (i + 1) % tags.len();
+        let new_tag = &tags[new_i];
         self.focus_tag(new_tag);
     }
 
     ///Move focus to previous tag
     pub fn previous_tag(&mut self) {
-        if self.ordered_tags().len() <= 1 {
+        let tags = self.ordered_tags();
+        if tags.len() == 0 {
             return;
         }
-        self.update_previous_tag(self.screens.focus.workspace.tag.clone());
-       
-        let i = self
-            .ordered_tags()
+        let i = tags
             .iter()
             .position(|a| a == self.current_tag())
             .unwrap_or_default();
 
-        let i = if i == 0 {
-            self.ordered_tags().len() - 1
-        } else {
-            i - 1
-        };
-        let new_tag = &self.ordered_tags()[i];
+        let new_i = if i == 0 { tags.len() - 1 } else { i - 1 };
+        let new_tag = &tags[new_i];
         self.focus_tag(new_tag);
     }
 
