@@ -573,6 +573,7 @@ fn manage_existing_clients<X: XConn>(state: &mut State<X>, x: &X) -> Result<()> 
         .collect();
 
     let first_tag = state.client_set.ordered_tags()[0].clone();
+    let mut current_tag = first_tag.clone();
 
     for id in x.existing_clients()? {
         if !state.client_set.contains(&id) && client_should_be_manged(id, x) {
@@ -585,8 +586,16 @@ fn manage_existing_clients<X: XConn>(state: &mut State<X>, x: &X) -> Result<()> 
             let title = x.window_title(id)?;
             info!(%id, %title, %tag, "attempting to manage existing client");
             manage_without_refresh(id, Some(tag), state, x)?;
+
+            //use the tag of the last WmState::Normal client
+            if let Ok(wm_state) = x.get_wm_state(id) {
+                if wm_state == Some(WmState::Normal) {
+                    current_tag = tag.clone();
+                }
+            }
         }
     }
+    state.client_set.focus_tag(current_tag);
 
     info!("triggering refresh");
     x.refresh(state)
